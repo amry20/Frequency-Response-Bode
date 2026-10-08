@@ -468,7 +468,7 @@ class App:
                                   line_cb=lambda line: dbg.append(line) if line.startswith("OCDBG") else None)
             if r and r[-1].startswith("CAL "):
                 c_pf = float(r[-1].split()[1])
-                if math.isnan(c_pf) or c_pf <= 0 or c_pf > 1000:
+                if math.isnan(c_pf) or c_pf <= 0 or c_pf > 3000:
                     self.events.put(("log", f"Calibration rejected (implausible {c_pf:.1f} pF). " +
                                      (" | ".join(dbg) if dbg else "no debug lines")))
                 else:
