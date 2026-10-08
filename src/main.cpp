@@ -95,8 +95,8 @@ const double PWM_FREQ = 1000000.0;  // 1.0 MHz PWM carrier frequency
 
 uint32_t     ddsTicks = 64;
 
-// Random extra delay after each ADC sample (CPU cycles at 168 MHz: 0 to 3.57 us completely covers loop interval)
-uint32_t     ditherCycles = 600;
+// Random extra delay after each ADC sample (CPU cycles at 168 MHz: 168 cycles = 1.0 us matches Teensy 4.1 timing)
+uint32_t     ditherCycles = 168;
 const int    MAX_BINS = 200;
 
 // ---------------- types ----------------
@@ -235,6 +235,7 @@ Meas acquire(double f, uint32_t ms, float *binA, float *binB, uint32_t *binN, in
   const double TWO_PI_D = 2.0 * M_PI;
   const double wcyc = TWO_PI_D * f / (double)SystemCoreClock;
   const uint32_t dur = (uint32_t)((uint64_t)ms * SystemCoreClock / 1000);
+  const float binScale = (nbins > 0) ? (float)((double)nbins / TWO_PI_D) : 0.0f;
 
   double Scc=0, Sss=0, Scs=0, Sc=0, Ss=0, N=0;
   double SAc=0, SAs=0, SA=0, SBc=0, SBs=0, SB=0;
@@ -276,16 +277,32 @@ Meas acquire(double f, uint32_t ms, float *binA, float *binB, uint32_t *binN, in
       while ((uint32_t)(DWT->CYCCNT - tw) < w) ;
     }
 
-    Scc += (double)c*c; Sss += (double)s*s; Scs += (double)c*s; Sc += c; Ss += s; N += 1;
-    SAc += (double)a*c; SAs += (double)a*s; SA += a;
-    SBc += (double)b*c; SBs += (double)b*s; SB += b;
+    // Hardware FPU single-precision multiplications (1 cycle each on Cortex-M4)
+    float fa = (float)a;
+    float fb = (float)b;
+
+    Scc += (double)(c * c);
+    Sss += (double)(s * s);
+    Scs += (double)(c * s);
+    Sc  += (double)c;
+    Ss  += (double)s;
+    N   += 1.0;
+
+    SAc += (double)(fa * c);
+    SAs += (double)(fa * s);
+    SA  += (double)a;
+
+    SBc += (double)(fb * c);
+    SBs += (double)(fb * s);
+    SB  += (double)b;
+
     if (a < m.minA) m.minA = a;
     if (a > m.maxA) m.maxA = a;
     if (b < m.minB) m.minB = b;
     if (b > m.maxB) m.maxB = b;
 
     if (nbins > 0) {
-      int bi = (int)(ph / TWO_PI_D * nbins);
+      int bi = (int)(ph * binScale);
       if (bi >= nbins) bi = nbins - 1;
       if (bi >= 0) {
         binA[bi] += a; binB[bi] += b; binN[bi]++;
@@ -690,13 +707,13 @@ void setupPeripherals() {
 
   ADC1->CR1 = 0; // 12-bit
   ADC1->CR2 = ADC_CR2_ADON;
-  ADC1->SMPR2 = (2 << (1 * 3)); // 28 cycles sampling time (1.33 us @ 21 MHz: full settling for Rin <= 1k, fast loop)
+  ADC1->SMPR2 = (1 << (1 * 3)); // 15 cycles sampling time (714 ns @ 21 MHz: fast & fully settled for Rin <= 1k)
   ADC1->SQR1 = 0;               // 1 conversion
   ADC1->SQR3 = 1;               // SQ1 = Channel 1 (PA1)
 
   ADC2->CR1 = 0; // 12-bit
   ADC2->CR2 = ADC_CR2_ADON;
-  ADC2->SMPR2 = (2 << (2 * 3)); // 28 cycles sampling time (1.33 us @ 21 MHz: full settling for Rin <= 1k, fast loop)
+  ADC2->SMPR2 = (1 << (2 * 3)); // 15 cycles sampling time (714 ns @ 21 MHz: fast & fully settled for Rin <= 1k)
   ADC2->SQR1 = 0;               // 1 conversion
   ADC2->SQR3 = 2;               // SQ1 = Channel 2 (PA2)
 }
