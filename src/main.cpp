@@ -246,6 +246,19 @@ Meas acquire(double f, uint32_t ms, float *binA, float *binB, uint32_t *binN, in
   ADC1->SR = 0;
   ADC2->SR = 0;
 
+  // Adaptive Dither Scaling:
+  // Instead of a fixed small delay (168 cycles / 1.0 us), dynamically scale dither
+  // to span at least half of the excitation signal period (180 degrees of phase).
+  // This guarantees uniform phase sampling across 0..2*pi at any frequency,
+  // completely eliminating stroboscopic harmonic locking and point-to-point beating.
+  uint32_t dynDither = ditherCycles;
+  if (ditherCycles > 0 && f > 10.0) {
+    uint32_t halfPeriodCycles = (uint32_t)((double)SystemCoreClock / (2.0 * f));
+    if (halfPeriodCycles > 4000) halfPeriodCycles = 4000;
+    if (halfPeriodCycles < ditherCycles) halfPeriodCycles = ditherCycles;
+    dynDither = halfPeriodCycles;
+  }
+
   uint32_t t0 = DWT->CYCCNT;
   while (true) {
     __disable_irq();
@@ -269,10 +282,10 @@ Meas acquire(double f, uint32_t ms, float *binA, float *binB, uint32_t *binN, in
     int a = (int)(ADC1->DR & 0x0FFF);
     int b = (int)(ADC2->DR & 0x0FFF);
 
-    if (ditherCycles) {
+    if (dynDither) {
       static uint32_t rng = 2463534242u;
       rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-      uint32_t w = rng % ditherCycles;
+      uint32_t w = rng % dynDither;
       uint32_t tw = DWT->CYCCNT;
       while ((uint32_t)(DWT->CYCCNT - tw) < w) ;
     }
@@ -707,13 +720,13 @@ void setupPeripherals() {
 
   ADC1->CR1 = 0; // 12-bit
   ADC1->CR2 = ADC_CR2_ADON;
-  ADC1->SMPR2 = (1 << (1 * 3)); // 15 cycles sampling time (714 ns @ 21 MHz: fast & fully settled for Rin <= 1k)
+  ADC1->SMPR2 = (2 << (1 * 3)); // 28 cycles sampling time (1.33 us @ 21 MHz: optimal settling for Rin up to 2.5k)
   ADC1->SQR1 = 0;               // 1 conversion
   ADC1->SQR3 = 1;               // SQ1 = Channel 1 (PA1)
 
   ADC2->CR1 = 0; // 12-bit
   ADC2->CR2 = ADC_CR2_ADON;
-  ADC2->SMPR2 = (1 << (2 * 3)); // 15 cycles sampling time (714 ns @ 21 MHz: fast & fully settled for Rin <= 1k)
+  ADC2->SMPR2 = (2 << (2 * 3)); // 28 cycles sampling time (1.33 us @ 21 MHz: optimal settling for Rin up to 2.5k)
   ADC2->SQR1 = 0;               // 1 conversion
   ADC2->SQR3 = 2;               // SQ1 = Channel 2 (PA2)
 }

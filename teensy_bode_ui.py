@@ -204,6 +204,7 @@ class App:
         self.stop_flag = threading.Event()
         self.busy = False
         self.live_wave = tk.BooleanVar(value=False)
+        self.smooth_bode = tk.BooleanVar(value=True)
 
         self.coarse = []      # (f, |Z|, phase, re, im)
         self.fine = []
@@ -332,6 +333,7 @@ class App:
         zb.pack(fill=tk.X)
         ttk.Button(zb, text="Show full sweep", command=lambda: self.redraw_bode(view="full")).pack(side=tk.LEFT)
         ttk.Button(zb, text="Zoom to resonance", command=lambda: self.redraw_bode(view="zoom")).pack(side=tk.LEFT, padx=4)
+        ttk.Checkbutton(zb, text="Smooth curves", variable=self.smooth_bode, command=self.redraw_bode).pack(side=tk.LEFT, padx=8)
 
         # Waveform tab
         tab = ttk.Frame(self.tabs)
@@ -701,18 +703,33 @@ class App:
     def redraw_bode(self, view=None):
         axz, axp = self.ax_z, self.ax_p
         axz.clear(); axp.clear()
+
+        def _smooth_series(arr):
+            if not self.smooth_bode.get() or len(arr) < 6:
+                return arr
+            res = arr.copy()
+            for col in (1, 2):  # Zmag and Phase
+                vals = arr[:, col]
+                s = np.copy(vals)
+                for i in range(1, len(vals) - 1):
+                    s[i] = np.median(vals[i-1:i+2])
+                res[:, col] = s
+            return res
+
         if self.reference:
             rf, rz, rp = self.reference
             axz.plot(rf, rz, "--", color="#ff7f0e", lw=1.2, label="Reference")
             axp.plot(rf, rp, "--", color="#ff7f0e", lw=1.2)
         if self.coarse:
             c = np.array(sorted(self.coarse))
-            axz.plot(c[:, 0], c[:, 1], "-", color="#999", lw=1, label="Coarse")
-            axp.plot(c[:, 0], c[:, 2], "-", color="#999", lw=1)
+            cp = _smooth_series(c)
+            axz.plot(cp[:, 0], cp[:, 1], "-", color="#999", lw=1.2, label="Coarse")
+            axp.plot(cp[:, 0], cp[:, 2], "-", color="#999", lw=1.2)
         if self.fine:
             d = np.array(sorted(self.fine))
-            axz.plot(d[:, 0], d[:, 1], ".-", color="#1f77b4", ms=3, lw=1, label="Zoom")
-            axp.plot(d[:, 0], d[:, 2], ".-", color="#1f77b4", ms=3, lw=1)
+            dp = _smooth_series(d)
+            axz.plot(dp[:, 0], dp[:, 1], ".-", color="#1f77b4", ms=3, lw=1.2, label="Zoom")
+            axp.plot(dp[:, 0], dp[:, 2], ".-", color="#1f77b4", ms=3, lw=1.2)
 
         r = self.results
         for key, col in (("fs", "#2ca02c"), ("fp", "#d62728")):
