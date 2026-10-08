@@ -496,14 +496,40 @@ void updateStateMachine() {
         static float binA[MAX_BINS], binB[MAX_BINS];
         static uint32_t binN[MAX_BINS];
         for (int i = 0; i < waveCtx.bins; i++) { binA[i] = binB[i] = 0; binN[i] = 0; }
-        Meas m = acquire(waveCtx.fa, 60, binA, binB, binN, waveCtx.bins);
+        // 120 ms capture duration gives STM32 (168 MHz) enough iterations to sweep all phase bins
+        Meas m = acquire(waveCtx.fa, 120, binA, binB, binN, waveCtx.bins);
         if (!m.ok) CommPort.println("ERR fit failed");
         else {
           CommPort.print("W "); printMeasFields(waveCtx.fa, m);
           const double k = VREF / ADC_MAX;
           for (int i = 0; i < waveCtx.bins; i++) {
-            if (binN[i] == 0) CommPort.println("D nan nan");
-            else CommPort.printf("D %.5f %.5f\n", (double)(binA[i] / binN[i] * k), (double)(binB[i] / binN[i] * k));
+            if (binN[i] == 0) {
+              // Interpolate empty bin across neighboring populated bins to eliminate waveform gaps
+              int prev = (i - 1 + waveCtx.bins) % waveCtx.bins;
+              int dist_prev = 1;
+              while (binN[prev] == 0 && dist_prev < waveCtx.bins) {
+                prev = (prev - 1 + waveCtx.bins) % waveCtx.bins;
+                dist_prev++;
+              }
+              int next = (i + 1) % waveCtx.bins;
+              int dist_next = 1;
+              while (binN[next] == 0 && dist_next < waveCtx.bins) {
+                next = (next + 1) % waveCtx.bins;
+                dist_next++;
+              }
+              if (binN[prev] > 0 && binN[next] > 0) {
+                float vA_p = binA[prev] / binN[prev], vA_n = binA[next] / binN[next];
+                float vB_p = binB[prev] / binN[prev], vB_n = binB[next] / binN[next];
+                float frac = (float)dist_prev / (float)(dist_prev + dist_next);
+                float valA = vA_p + frac * (vA_n - vA_p);
+                float valB = vB_p + frac * (vB_n - vB_p);
+                CommPort.printf("D %.5f %.5f\n", (double)(valA * k), (double)(valB * k));
+                continue;
+              }
+              CommPort.println("D nan nan");
+            } else {
+              CommPort.printf("D %.5f %.5f\n", (double)(binA[i] / binN[i] * k), (double)(binB[i] / binN[i] * k));
+            }
           }
           CommPort.println("WEND");
         }

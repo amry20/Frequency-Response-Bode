@@ -658,6 +658,17 @@ class App:
         minA, maxA, minB, maxB, n = (int(x) for x in head[10:15])
         a = np.array([d[0] for d in data] * 2)
         b = np.array([d[1] for d in data] * 2)
+        # Interpolate over any NaNs so matplotlib draws smooth, unbroken lines
+        nans_a = np.isnan(a)
+        if np.any(nans_a) and not np.all(nans_a):
+            valid_idx = np.where(~nans_a)[0]
+            nan_idx = np.where(nans_a)[0]
+            a[nan_idx] = np.interp(nan_idx, valid_idx, a[valid_idx])
+        nans_b = np.isnan(b)
+        if np.any(nans_b) and not np.all(nans_b):
+            valid_idx = np.where(~nans_b)[0]
+            nan_idx = np.where(nans_b)[0]
+            b[nan_idx] = np.interp(nan_idx, valid_idx, b[valid_idx])
         x = np.arange(len(a)) * 360.0 / len(data)
         self.wax.clear()
         self.wax.plot(x, a, label="Node A", color="#1f77b4")
